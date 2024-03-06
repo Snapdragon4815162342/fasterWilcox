@@ -1,0 +1,26 @@
+{
+    "id": "7EFC1BA7",
+    "path": "~/Desktop/fasterWilcox_presentation/sparse.h",
+    "project_path": "sparse.h",
+    "type": "h",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1709317087414.0,
+    "source_on_save": false,
+    "relative_order": 7,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "271,4",
+        "scrollLine": "190"
+    },
+    "folds": "32|69|43|2|\n46|102|60|2|\n63|139|78|2|\n105|23|108|2|\n111|70|114|2|\n117|59|121|2|\n126|57|188|2|\n193|65|258|2|\n280|18|282|2|\n285|18|289|2|\n292|18|296|2|\n299|74|317|2|\n324|90|352|2|\n358|87|390|2|\n404|38|587|2|\n595|54|728|2|\n736|56|869|2|\n",
+    "lastKnownWriteTime": 1709317769,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1709318022282,
+    "read_only": false,
+    "read_only_alternatives": []
+}

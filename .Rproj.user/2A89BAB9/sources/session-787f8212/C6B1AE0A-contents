@@ -1,0 +1,210 @@
+library(Matrix)
+library('microbenchmark')
+library(ggplot2)
+library(Rcpp)
+setwd("~/Desktop/sparse_matrix")
+
+################################################################################################
+################################################################################################
+# SPARSE MATRIX
+#NEW
+sourceCpp("sparse_faster_wilcox_v3.cpp", verbose = TRUE, rebuild = TRUE)
+
+#OLD
+sourceCpp("Wilcoxon_statistics.cpp", verbose = TRUE, rebuild = TRUE)
+# 
+# creo una sparse matrix random:
+set.seed(124)
+sparsity = 0.3 #%
+#matrixSize = 100
+
+numrow = 100
+numcol = 100
+
+non_zero_elem = (sparsity)*(numrow*numcol)
+
+# 5 random row indices
+i <- sample(numrow,non_zero_elem, replace = T)
+# 5 random column indices
+j <- sample(numcol,non_zero_elem, replace = T)
+# 5 random numbers
+x <- rpois(non_zero_elem,10)
+
+
+sp_matrix <- sparseMatrix(i=i,j=j,x=x)
+dim(sp_matrix)
+# 
+# M <- matrix(c(1,4,7,1,3,
+#               3,3,9,2,1,
+#               0,2,1,8,5), nrow = 3, ncol = 5)
+# 
+# M <- matrix(c(1,0,0,0,0,
+#               0,0,2,0,0,
+#               0,0,4,0,0), nrow = 3, ncol = 5)
+# 
+# M
+# sM<- as(M, "sparseMatrix")
+# sM
+# 
+# sparse_fasterWilcox_new(sM, rowIndex = c(2), col_id = c(1,2), ref_col_id = c(3,4,5))
+# sparse_fasterWilcox_old(sM, rowIndex = c(2), col_id = c(1,2), ref_col_id = c(3,4,5))
+# wilcox.test(c(0,0), c(2,0,0), alternative = "two.sided", paired = F, exact = F, correct = T)$p.value
+# 
+# sparse_fasterWilcox_old(sp_matrix, rowIndex = 1:matrixSize, col_id = 1:(matrixSize/2), ref_col_id = ((matrixSize/2)+1):matrixSize   ) 
+# sparse_fasterWilcox_new(sp_matrix, rowIndex = 1:matrixSize, col_id = 1:(matrixSize/2), ref_col_id = ((matrixSize/2)+1):matrixSize   )
+# 
+# #wilcox.test(M[3,c(1,2)], M[3,c(3,4,5)], alternative = "two.sided", paired = F, exact = F, correct = T)$p.value
+# 
+# 
+
+
+mean_time_old <- rep(0,10)
+mean_time_new <- rep(0,10)
+crossing_point <- list()
+count = 0
+numrow<-10
+for(j in seq(from = 100, to = 10000, length.out = 10)){
+  count = 0
+for (i in seq(from = 0.1, to = 1, length.out = 10)){
+  count <- count+1
+  # creo una sparse matrix random:
+  #set.seed(124)
+  sparsity = i #%
+  numcol = j
+  
+  
+  
+  non_zero_elem = (sparsity)*(numrow*numcol)
+  
+  # 5 random row indices
+  ii <- sample(numrow,non_zero_elem, replace = T)
+  # 5 random column indices
+  jj <- sample(numcol,non_zero_elem, replace = T)
+  # 5 random numbers
+  xx <- rpois(non_zero_elem,10)
+  
+  
+  sp_matrix <- sparseMatrix(i=ii,j=jj,x=xx, dims = c(numrow, numcol))
+
+  mbm = microbenchmark(
+    old = sparse_fasterWilcox_old(sp_matrix, rowIndex = 1:numrow, col_id = 1:(numcol/2), ref_col_id = ((numcol/2)+1):numcol   ),
+    new = sparse_fasterWilcox_new(sp_matrix, rowIndex = 1:numrow, col_id = 1:(numcol/2), ref_col_id = ((numcol/2)+1):numcol   ),
+    times=5
+    )
+
+  mean_time_old[count] <- mean(mbm$time[mbm$expr=="old"])
+  mean_time_new[count] <- mean(mbm$time[mbm$expr=="new"])
+
+}
+  plot(mean_time_new - mean_time_old)
+  lines(mean_time_new - mean_time_old)
+  abline(h=0, col = "red")
+  
+  crossing_point <- append(crossing_point, mean_time_new - mean_time_old)
+  #crossing_point[j]<- mean_time_new - mean_time_old
+}
+
+plot(crossing_point, col="red")
+# plot(mean_time_new)
+# lines(mean_time_new)
+# points(mean_time_old, col = "red")
+# lines(mean_time_old, col = "red")
+
+
+
+#autoplot(mbm)
+
+
+####################################################################################################
+#controllo che le funzioni diano lo stesso risultato di wilcox.test()
+
+sourceCpp("sparse_faster_wilcox_v3.cpp", verbose = TRUE, rebuild = TRUE)
+
+
+m1 <- matrix(data = rnorm(10^5), nrow = 14, ncol = 14)
+m1
+# 
+# sp_matrix
+# 
+# m1<- as.matrix(sp_matrix)
+# res_wilcox <- rep(0, 100)
+
+for (i in 1:100){
+  res_wilcox[i] <- wilcox.test(m1[i,1:50], m1[i,51:100], alternative = "two.sided", paired = F, exact = F, correct = T)$p.value
+}
+m1<- sp_matrix
+#sp_matrix
+m1<-as(m1, "sparseMatrix")
+m1[1,]
+ref_cid <- c(5,6,7)
+
+v <- c(0,0,1,5,0,  7,3,0,5,2)
+v <- c(3,3,5,2,0,5,0,  0,0,3,3,0,0,1)
+for(i in 1:14){
+  m1[1,i] <- v[i]
+}
+
+#m1
+res_old <- sparse_fasterWilcox_old(m1, rowIndex = 1:100, col_id = 1:50, ref_col_id = 51:100   )
+
+sourceCpp("sparse_faster_wilcox_v3.cpp", verbose = TRUE, rebuild = TRUE)
+m1[59,1:50]
+m1[59,51:100]
+res_new <- sparse_fasterWilcox_new(m1,
+                                   rowIndex = 1:dim(m1)[2],
+                                   #rowIndex = 59,
+                                   col_id = 1:((dim(m1)[1]/2)),
+                                   ref_col_id =  (((dim(m1)[1]/2))+1):(dim(m1)[1]), 
+                                   paired = T, 
+                                   verbose = T)$p.value
+
+
+res_wil <- rep(0, dim(m1)[2])
+for (i in 1:dim(m1)[2]){
+  res_wil[i] <- wilcox.test(m1[i,1:((dim(m1)[1]/2))],
+                            m1[i,(((dim(m1)[1]/2))+1):(dim(m1)[1])], 
+                            alternative = "two.sided",
+                            paired = T,
+                            exact = F,
+                            correct = T)$p.value
+}
+
+which(res_new-res_wil < -0.005)
+plot(res_new - res_wil)
+
+
+
+
+##############################################
+m2 <- matrix(data = rnorm(10^5), nrow = 12, ncol = 12)
+v <- c(1,1,1,0,0,0,   0,0,0,1,1,1)
+for(i in 1:12){
+  m2[1,i] <- v[i]
+}
+m2<-as(m2, "sparseMatrix")
+m2[1,]
+sparse_fasterWilcox_new(m2,
+                        #rowIndex = 1:dim(m1)[2],
+                        rowIndex = 1,
+                        col_id = 1:((dim(m2)[1]/2)),
+                        ref_col_id =  (((dim(m2)[1]/2))+1):(dim(m2)[1]), 
+                        paired = T, 
+                        verbose = T)$p.value
+
+wilcox.test(m2[1,1:((dim(m2)[1]/2))],
+            m2[1,(((dim(m2)[1]/2))+1):(dim(m2)[1])], 
+            alternative = "two.sided",
+            paired = T,
+            exact = F,
+            correct = T)$p.value
+
+##################################################à
+
+
+
+diff <- res_wilcox - res_old$pvalue
+plot(diff)
+diff_new <- res_wilcox - res_new$pvalue
+plot(diff_new)
+diff
+

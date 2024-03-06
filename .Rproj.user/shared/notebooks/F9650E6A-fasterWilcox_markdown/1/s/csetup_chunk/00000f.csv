@@ -1,0 +1,7 @@
+"0","knitr::opts_chunk$set(echo = TRUE)"
+"2","Warning messages:
+"
+"2","1: replacing previous import 'Matrix::tail' by 'utils::tail' when loading 'gficf' 
+"
+"2","2: replacing previous import 'RcppML::head' by 'utils::head' when loading 'gficf' 
+"

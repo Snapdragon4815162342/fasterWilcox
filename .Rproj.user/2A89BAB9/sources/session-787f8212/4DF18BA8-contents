@@ -1,0 +1,208 @@
+---
+title: "fasterWilcox_presentation"
+author: "Lorenzo_Benatti"
+date: "2024-03-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## fasterWilcox
+
+FasterWilcox is a function that speeds up R's wilcox.test()
+It uses Rcpp
+
+# example use
+```{r include=FALSE}
+library('microbenchmark')
+library('bigmemory')
+library('gficf')
+library('peakRAM')
+library('ggplot2')
+library('svMisc')
+library('tidyverse')
+library('Matrix')
+
+library('Rcpp')
+```
+
+```{r}
+sourceCpp("Rcpp_FasterWilcox_ver3.cpp", verbose = TRUE, rebuild = TRUE)
+
+v1<- c(45, 33, 35, 39, 42)
+v2<- c(34, 36, 41, 43, 44)
+
+
+fasterWilcox_v3(v1, v2, alternative = "two.sided", paired = F, verbose = F)$p.value
+fasterWilcox_v3(v1, v2, alternative = "two.sided", paired = T, verbose = F)$p.value
+```
+## Speed comparison
+
+```{r}
+
+v1<- rnorm(n = 10^5)
+v2<- rnorm(n = 10^5)
+
+mbm = microbenchmark(
+  fasterWilcox = fasterWilcox_v3(v1, v2, alternative = "two.sided", paired = F, verbose = F),
+  fasterWilcox_paired = fasterWilcox_v3(v1, v2, alternative = "two.sided", paired = T, verbose = F),
+  wilcox.test  = wilcox.test(v1, v2, alternative = "two.sided", paired = F, exact = F, correct = T),
+  wilcox.test_paired  = wilcox.test(v1, v2, alternative = "two.sided", paired = T, exact = F, correct = T),
+  times=3 )
+
+autoplot(mbm)+
+  ggtitle("vector size 10^5")
+
+t <- data.frame()
+max_vec_size <- 10^4
+for(i in seq(100, max_vec_size, length.out = 10)){
+  
+  mbm = microbenchmark(
+  fasterWilcox = fasterWilcox_v3(v1, v2, alternative = "two.sided", paired = F, verbose = F),
+  fasterWilcox_paired = fasterWilcox_v3(v1, v2, alternative = "two.sided", paired = T, verbose = F),
+  wilcox.test  = wilcox.test(v1, v2, alternative = "two.sided", paired = F, exact = F, correct = T),
+  wilcox.test_paired  = wilcox.test(v1, v2, alternative = "two.sided", paired = T, exact = F, correct = T),
+  times=10 )
+  
+  #mbm<-mbm[order(mbm$expr),]
+  mbm$expr <- as.factor(mbm$expr)
+  #str(mbm)
+  
+  
+  for (j in seq_along(levels(mbm$expr)) ){
+    
+    m <- mean(mbm[mbm$expr == levels(mbm$expr)[j],]$time)
+    s <- sd(mbm[mbm$expr == levels(mbm$expr)[j],]$time)
+    t <- rbind(t, list(vec_size = i, expr = levels(mbm$expr)[j], mean = m, sd = s))
+  
+    }
+  
+}
+
+
+  ggplot(data = t, aes(x = vec_size, y = mean, colour = expr))+
+    geom_point(size = 5, alpha = 0.3)+
+    geom_line(linewidth = 1)+
+    theme_minimal()+
+    #scale_x_continuous(trans='log2') +
+    geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2,
+                 position=position_dodge(0.05))
+    labs("Execution time [ns]")
+
+
+```
+
+## Accuracy comparison
+
+Here's a boxplot and a density plot of the difference between the p-values given by wilcox.test() and fasterWilcox()
+
+The maximum difference is less than 5e-16
+```{r}
+n_tests <- 1000
+vec_size <- 1000
+
+diff <- data.frame()
+for(i in 1:n_tests){
+  v1<- rnorm(n = vec_size)
+  v2<- rnorm(n = vec_size)
+  
+  wilcox  <- wilcox.test(v1, v2, alternative = "two.sided", paired = F, exact = F, correct = T)$p.value
+  fasterWilcox <- fasterWilcox_v3(v1, v2, alternative = "two.sided", paired = F, verbose = F)$p.value
+  wilcox - fasterWilcox
+  
+  diff <- rbind(diff, list(test = i, type = "non-paired", differ = wilcox - fasterWilcox))
+  
+  wilcox  <- wilcox.test(v1, v2, alternative = "two.sided", paired = T, exact = F, correct = T)$p.value
+  fasterWilcox <- fasterWilcox_v3(v1, v2, alternative = "two.sided", paired = T, verbose = F)$p.value
+  wilcox - fasterWilcox
+  
+  diff <- rbind(diff, list(test = i, type = "paired", differ = wilcox - fasterWilcox))
+}
+
+ggplot (data = diff, aes(x = differ, colour = type))+
+          geom_density()
+    #geom_line(linewidth = 1)+
+    theme_minimal()
+    
+ggplot(data = diff, aes(x = type, y = differ, fill = type))+
+  geom_boxplot()+
+    stat_summary(fun=mean, geom="point", shape=5, size=4)
+
+```
+
+
+
+## Sparse matrices
+
+Let's consider two methods to perform wilcox test on a row of a sparse matrix:
+1) copying the entire row (along with all the zeroes), selectong two subvectors and applying the regular test
+2) copying the entire row (without the zeroes), selectong two subvectors and applying a slightly modified version of the test (to accout for the missing zeroes)
+
+method 1 is coded in the function sparse_fasterWilcox_old() (inside Wilcoxon_ststistics.cpp)
+method 2 is coded in sparse_fasterWilcox_new() (inside sparse_fasterWilcox_v3.cpp -> It's just a call to the methods implemented in sparse.h)
+
+# Example use
+```{r}
+
+#NEW
+sourceCpp("sparse_faster_wilcox_v3.cpp", verbose = TRUE, rebuild = TRUE)
+
+#OLD
+sourceCpp("Wilcoxon_statistics.cpp", verbose = TRUE, rebuild = TRUE)
+# 
+# creo una sparse matrix random:
+set.seed(124)
+sparsity = 0.3 #%
+#matrixSize = 100
+
+numrow = 10
+numcol = 10
+
+non_zero_elem = (sparsity)*(numrow*numcol)
+
+# row indices
+i <- sample(numrow,non_zero_elem, replace = T)
+# column indices
+j <- sample(numcol,non_zero_elem, replace = T)
+# numbers
+x <- rpois(non_zero_elem,10)
+
+
+sp_matrix <- sparseMatrix(i=i,j=j,x=x)
+sp_matrix[3,]
+
+sparse_fasterWilcox_new(sp_matrix, rowIndex = 1:numrow, col_id = 1:(numcol/2), ref_col_id = ((numcol/2)+1):numcol, paired = T  )
+
+
+
+```
+
+
+```{r}
+
+sparse_fasterWilcox_new(sp_matrix, rowIndex = 1:numrow, col_id = 1:(numcol/2), ref_col_id = ((numcol/2)+1):numcol, paired = T   )
+
+sparse_fasterWilcox_old(sp_matrix, rowIndex = 1:numrow, col_id = 1:(numcol/2), ref_col_id = ((numcol/2)+1):numcol, paired = T   )
+
+sp_matrix[1,]
+
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+

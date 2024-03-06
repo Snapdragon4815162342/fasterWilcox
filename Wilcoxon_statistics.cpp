@@ -1,0 +1,604 @@
+#include <Rcpp.h>
+#include <vector>
+#include "sparse.h"
+
+
+
+// [[Rcpp::plugins(cpp11)]]
+// [[Rcpp::depends(BH, bigmemory)]]
+#include <bigmemory/MatrixAccessor.hpp>
+
+#include <numeric>
+
+#include <math.h>
+
+using namespace Rcpp;
+
+
+template <typename T> 
+int sgn(T val) {
+  return (T(0) < val) - (val < T(0));
+}
+
+
+template <typename T>
+std::vector<size_t> sort_indexes(std::vector<T> const &v){
+  
+  // initialize original index locations
+  std::vector<size_t> idx(v.size());
+  iota(idx.begin(), idx.end(), 0);
+  
+  // sort indexes based on comparing values in v
+  sort(idx.begin(), idx.end(),
+       [&v](size_t i1, size_t i2) {return v[i1] < v[i2];});
+  
+  return idx;
+}
+
+
+
+
+
+template <typename T>
+std::vector<double> calculate_ranks(const std::vector<T>& v, double& correctionFactor) {
+  
+  std::vector<double> ranks(v.size());
+  
+  size_t i=0, j=0;
+  while (i < v.size()){
+    j = i + 1;
+    while (j < v.size()){
+      if(v[i] != v[j]){
+        break;
+      }
+      j++;
+    }
+    
+    if((j-i) > 1){
+      double temp = j-i;
+      correctionFactor += temp*temp*temp -temp;
+    }
+    
+    for(size_t k = i; k <= j-1; k++){
+      ranks[k] = 1 + static_cast<double>(i + j-1)/static_cast<double>(2);
+    }
+    i = j;
+  }
+  
+  
+  return ranks;
+}
+
+
+
+
+
+
+
+void mannwhitneyutest(
+    Rcpp::NumericVector const &V1,
+    Rcpp::NumericVector const &V2,
+    double& bothtails,
+    double& righttail,
+    double& lefttail
+)
+{
+  int V1_size = V1.size();
+  //copy V1 and V2 into X
+  std::vector <double> X(V1.size());
+  std::copy(V1.begin(), V1.end(), X.begin());
+  X.insert( X.end(),V2.begin(),V2.end());
+  
+  
+  
+  int n = X.size();
+  
+  
+  std::vector <double> ranks (X.size());
+  
+  //sort the vector and save the indices vector
+  std::vector<size_t> idx = sort_indexes(X);
+  
+  //for(size_t i=0;i< idx.size(); i++)
+  //  std::cout<<idx[i]<<" ";
+  
+  std::vector<double> sorted_copy(X.size());
+  for(size_t i=0; i<X.size(); i++){
+    sorted_copy[i] = X[idx[i]];
+  }
+  
+  double correctionFactor = 0; //this correction factor is used to adjust the value of sigma to account for tie correction
+  // fast version of getranks
+  ranks = calculate_ranks(sorted_copy, correctionFactor);
+  
+  
+  // std::cout<<"ranks : ";
+  // display(ranks);
+  
+  // std::cout<<"countOfElements : ";
+  // display(countOfElements);
+  
+  
+  
+  //ranked sums
+  long double T0 = 0, T1 = 0;
+  
+  for(size_t i=0; i<X.size(); i++){
+    //idx[i]<V1.size()? T0 += ranks[i] : T1 += ranks[i];
+    if(idx[i]<V1.size())
+      T0 += ranks[i];
+  }
+  
+  T1 = (X.size() * (X.size()+1) / 2) - T0;
+  
+  
+  double n0 = V1.size(), n1 = V2.size();
+  
+  // std::cout<<"n0: "<<n0<<"\n";
+  // std::cout<<"n1: "<<n1<<"\n";
+  // std::cout<<"T0: "<<T0<<"\n";
+  // std::cout<<"T1: "<<T1<<"\n\n";
+  
+  //Calculating U values:
+  double long U0, U1;
+  
+  
+  U0 = (n0*(n0+1)*(-0.5))+T0;
+  U1 = (n1*(n1+1)*(-0.5))+T1;
+  
+  //std::cout<<"U0: "<<U0<<"\n\n";
+  //std::cout<<"U1: "<<U1<<"\n\n";
+  
+  double muU = n0*n1/2;; //Expected value of U
+  //std::cout<<"muU: "<<muU<<"\n";
+  
+  
+  
+  //sigmaU = (sqrt(n0)*sqrt(n1)*sqrt((n0+n1+1)))/sqrt(12);  //NOT ADJUSTED FOR TIE CORRECTION!!!
+  
+  
+  //standard error of U
+  long double sigmaU = sqrt(((n0*n1)/12)*((n0+n1+1)-(  (correctionFactor)/((n0+n1)*(n0+n1-1))   )   ));
+  // std::cout<<"correctionFactor:"<<correctionFactor;
+  // std::cout<<"sigmaU: "<<sigmaU<<"\n";
+  
+  
+  //Z value
+  //double z = (U-muU)/sigmaU;
+  double z=0;
+  z = U0<U1 ? U0-muU : U1-muU;
+  z = z<0 ? z+0.5 : z-0.5; // Continuity correction
+  //std::cout<<"U-muU: "<<z<<"\n";
+  z = z/sigmaU;
+  //std::cout<<"Z value: "<<z<<"\n";
+  
+  
+  // returning the p values in the passed variables
+  bothtails = (1+erf(z/sqrt(2)));
+  
+  lefttail = (1+erf(z/sqrt(2)))/2;
+  
+  righttail = 1-lefttail;
+  
+}
+
+void wilcoxonSignedRankTest( 
+    Rcpp::NumericVector const &V1,
+    Rcpp::NumericVector const &V2,
+    double& bothtails,
+    double& righttail,
+    double& lefttail,
+    bool verbose = 0
+){
+  std::vector <double> X;
+  
+  //numero di zeri
+  size_t nz = 0;
+  
+  for (size_t i=0; i<V1.size(); i++){
+    if((V1[i]- V2[i]) != 0)
+      X.push_back(V1[i]- V2[i]);
+    else
+      nz++;
+  }
+  
+  if(verbose){
+    for(size_t i=0; i<X.size(); i++)
+      std::cout<<X[i]<<" ";
+    
+    std::cout<<"\nnz: "<<nz<<"\n";
+  }
+  
+  
+  sort(X.begin(), X.end(), [](double i, double j) { return std::abs(i) < std::abs(j); });
+  if(verbose){
+    for(size_t i=0; i<X.size(); i++)
+      std::cout<<X[i]<<" ";
+  }
+  
+  
+  
+  std::vector <double> ranks (X.size());
+  double correctionFactor = 0;
+  // fast version of getranks  
+  ranks = calculate_ranks(X, correctionFactor);
+  
+  double T = 0;
+  double Tplus = 0;
+  double Tminus = 0;
+  
+  if(verbose)
+    std::cout<<"\n";
+  
+  //calculate the T statistic
+  for(size_t i=0; i<ranks.size(); i++){
+    T += sgn(X[i])*ranks[i];
+    sgn(X[i]) >0? Tplus += sgn(X[i])*ranks[i] : Tminus -= sgn(X[i])*ranks[i];
+    if(verbose)
+      std::cout<<sgn(X[i])*ranks[i]<<" ";
+  }
+  
+  
+  if(verbose){
+    std::cout<<"\nT:  "<<T;
+    std::cout<<"\nT+: "<<Tplus;
+    std::cout<<"\nT-: "<<Tminus;
+    std::cout<<"\n";
+  }
+  
+  // Calculate sigma, mu and the p value
+  
+  //number of pairs with a non zero difference
+  double n = X.size();
+  
+  //long double sigma = sqrt(  ((n*(n+1)*((2*n)+1)) - (nz*(nz+1)*(2*nz+1)) - (correctionFactor/2))  /24);
+  long double sigma = sqrt(  ((n*(n+1)*((2*n)+1)) - (correctionFactor/2) )  /24);
+  if(verbose)
+    std::cout<<"\nsigma: "<<sigma;
+  // std::cout<<"\nzero correction: "<<(nz*(nz+1)*(2*nz+1));
+  // std::cout<<"\nties correction: "<<(correctionFactor/2);  
+  
+  //double mu = ((n*(n+1))/4) - ((nz*(nz+1))/4);
+  double mu = ((n*(n+1))/4);
+  if(verbose){
+    std::cout<<"\nmu: "<<mu;
+    std::cout<<"\nn: "<<n;
+  }
+  double z = Tplus<Tminus ? Tplus-mu : Tminus-mu;
+  if(z!=0)
+    z = z<0 ? z+0.5 : z-0.5; // Continuity correction
+  if(sigma != 0)
+    z = z/sigma;
+  else
+    z = 0;
+  if(verbose)
+    std::cout<<"\nz: "<<z<<"\n";
+  //std::cout<<"Z value: "<<z<<"\n";
+  
+  
+  // returning the p values in the passed variables
+  lefttail = (1+erf(z/sqrt(2)))/2;
+  
+  righttail = 1-lefttail;
+  
+  bothtails = 2*(lefttail < righttail ? lefttail : righttail); 
+  
+}
+
+
+
+
+
+//#############################################################################################################
+// This is the actual function visible by R
+
+// [[Rcpp::export]]
+double fasterWilcox(NumericVector V1, NumericVector V2, bool verbose = 0, std::string alternative = "two.sided", bool paired = 0) {
+  
+  
+  
+  double bothTails = -3;
+  double rightTail = -3;
+  double leftTail  = -3;
+  
+  
+  
+  if(!paired)
+    mannwhitneyutest(V1, V2, bothTails, rightTail, leftTail);
+  else{
+    if(V1.length() != V2.length())
+      throw(Rcpp::exception("'x' and 'y' must have the same length"));
+    else
+      wilcoxonSignedRankTest(V1, V2, bothTails, rightTail, leftTail, verbose);
+  }
+  
+  
+  
+  if(verbose){
+    Rcout<<"\n";
+    Rcout<<"Mann Whitney U test results: \n";
+    Rcout<<"P-value bothTails: "<<bothTails<<"\n";
+    Rcout<<"P-value rightTail: "<<rightTail<<"\n";
+    Rcout<<"P-value leftTail : "<<leftTail<<"\n";
+  }
+  
+  
+  // Creating DataFrame to return
+  // DataFrame results = DataFrame::create( Named("p.value") = bothTails,
+  //                                        Named("p.leftTail") = rightTail,
+  //                                        Named("p.rightTail") = leftTail);
+  
+  double results;
+  
+  if(alternative == "two.sided"){
+    results = bothTails;
+  }
+  if(alternative == "greater"){
+    results = rightTail;
+  }
+  if(alternative == "less"){
+    results = leftTail;
+  }
+  
+  return results;
+  
+}
+
+
+// [[Rcpp::export]]
+DataFrame matrix_fasterWilcox(NumericMatrix M, NumericVector rowIndex, NumericVector col_id, NumericVector ref_col_id, bool verbose = 0, std::string alternative = "two.sided", bool paired = 0) {
+  
+  
+  NumericVector pvalues(M.nrow(), 1.0);
+  NumericVector sign(M.nrow());
+  sign.fill(NA_REAL); // NA_REAL is a constant representing NaN in Rcpp
+  
+  for (int rr = 0; rr < rowIndex.length(); rr++) {
+    
+    int ii = rowIndex[rr] -1 ;
+    
+    NumericVector row = M(ii, _);
+    
+    NumericVector tmp1 = row[col_id -1];
+    double sum1 = std::accumulate(tmp1.begin(), tmp1.end(), 0.0);
+    double mean1 = sum1 / tmp1.size();
+    
+    NumericVector tmp2 = row[ref_col_id -1];
+    double sum2 = std::accumulate(tmp2.begin(), tmp2.end(), 0.0);
+    double mean2 = sum2 / tmp2.size();
+    
+    if(mean2 <= mean1)
+    {
+      sign[ii] = 1;
+    }else{
+      sign[ii] = 0;
+    }
+    
+    pvalues[ii] = fasterWilcox(tmp1, tmp2, verbose = 0, alternative = alternative, paired);
+  }
+  
+  // Creating DataFrame to return
+  DataFrame results = DataFrame::create( Named("pvalue") = pvalues,
+                                         Named("sign") = sign);
+  
+  
+  return results;
+  
+  
+}
+
+
+// Logic
+template <typename T>
+DataFrame BigWilc(XPtr<BigMatrix> pMat, MatrixAccessor<T> mat,
+                  NumericVector rowIndex, NumericVector col_id, NumericVector ref_col_id, bool verbose = 0, std::string alternative = "two.sided") {
+  
+  
+  NumericVector pvalues(pMat->nrow(), 1.0);
+  NumericVector sign(pMat->nrow());
+  sign.fill(NA_REAL); // NA_REAL is a constant representing NaN in Rcpp
+  
+  for (int rr = 0; rr < rowIndex.length(); rr++) {
+    
+    int ii = rowIndex[rr] -1 ;
+    
+    NumericVector tmp1(col_id.length(), 0.0);
+    for (int jj = 0; jj < col_id.length(); jj++) {
+      int tmp_j = col_id[jj] - 1;
+      tmp1[jj] = mat[tmp_j][ii];
+      //tmp1.push_back(mat[tmp_j][ii]);
+    }
+    
+    //NumericVector tmp2;
+    NumericVector tmp2(ref_col_id.length(), 0.0);
+    for (int jj = 0; jj < ref_col_id.length(); jj++) {
+      int tmp_j = ref_col_id[jj] - 1;
+      tmp2[jj] = mat[tmp_j][ii];
+      //tmp2.push_back(mat[tmp_j][ii]);
+    }
+    
+    double sum1 = std::accumulate(tmp1.begin(), tmp1.end(), 0.0);
+    double mean1 = sum1 / tmp1.size();
+    
+    double sum2 = std::accumulate(tmp2.begin(), tmp2.end(), 0.0);
+    double mean2 = sum2 / tmp2.size();
+    
+    if(mean2 <= mean1)
+    {
+      sign[ii] = 1;
+    }else{
+      sign[ii] = 0;
+    }
+    
+    pvalues[ii] = fasterWilcox(tmp1, tmp2, verbose = 0, alternative = alternative);
+    
+  }
+  
+  DataFrame results = DataFrame::create( Named("pvalue") = pvalues,
+                                         Named("sign") = sign);
+  
+  return results;
+  
+}
+
+
+
+
+
+// [[Rcpp::export]]
+DataFrame BigWilc(SEXP pBigMat,
+                  NumericVector rowIndex,
+                  NumericVector col_id,
+                  NumericVector ref_col_id,
+                  bool verbose = 0,
+                  std::string alternative = "two.sided") {
+  // First we have to tell Rcpp what class to use for big.matrix objects.
+  // This object stores the attributes of the big.matrix object passed to it
+  // by R.
+  XPtr<BigMatrix> xpMat(pBigMat);
+  
+  // To access values in the big.matrix, we need to create a MatrixAccessor
+  // object of the appropriate type. Note that in every case we are still
+  // returning a NumericVector: this is because big.matrix objects only store
+  // numeric values in R, even if their type is set to 'char'. The types
+  // simply correspond to the number of bytes used for each element.
+  switch(xpMat->matrix_type()) {
+  case 1:
+    return BigWilc(xpMat, MatrixAccessor<char>(*xpMat), rowIndex, col_id, ref_col_id, verbose, alternative);
+  case 2:
+    return BigWilc(xpMat, MatrixAccessor<short>(*xpMat), rowIndex, col_id, ref_col_id, verbose, alternative);
+  case 4:
+    return BigWilc(xpMat, MatrixAccessor<int>(*xpMat), rowIndex, col_id, ref_col_id, verbose,  alternative);
+  case 6:
+    return BigWilc(xpMat, MatrixAccessor<float>(*xpMat), rowIndex, col_id, ref_col_id, verbose, alternative);
+  case 8:
+    return BigWilc(xpMat, MatrixAccessor<double>(*xpMat), rowIndex, col_id, ref_col_id, verbose, alternative);
+  default:
+    // This case should never be encountered unless the implementation of
+    // big.matrix changes, but is necessary to implement shut up compiler
+    // warnings.
+    throw Rcpp::exception("unknown type detected for big.matrix object!");
+  }
+}
+
+// [[Rcpp::export]]
+DataFrame sparse_fasterWilcox_v1(Rcpp::S4& A, NumericVector rowIndex, NumericVector col_id, NumericVector ref_col_id, bool verbose = 0, std::string alternative = "two.sided") {
+  
+  MySparseMatrix M =  MySparseMatrix(A);
+  NumericVector pvalues(M.nrow(), 1.0);
+  NumericVector sign(M.nrow());
+  sign.fill(NA_REAL); // NA_REAL is a constant representing NaN in Rcpp
+  
+  for (int rr = 0; rr < rowIndex.length(); rr++) {
+    
+    int ii = rowIndex[rr] -1 ;
+    
+    NumericVector row = M.extractRow(ii);
+    
+    NumericVector tmp1 = row[col_id -1];
+    double sum1 = std::accumulate(tmp1.begin(), tmp1.end(), 0.0);
+    double mean1 = sum1 / tmp1.size();
+    
+    NumericVector tmp2 = row[ref_col_id -1];
+    double sum2 = std::accumulate(tmp2.begin(), tmp2.end(), 0.0);
+    double mean2 = sum2 / tmp2.size();
+    
+    if(mean2 <= mean1)
+    {
+      sign[ii] = 1;
+    }else{
+      sign[ii] = 0;
+    }
+    
+    pvalues[ii] = fasterWilcox(tmp1, tmp2, verbose = 0 , alternative = alternative);
+  }
+  
+  // Creating DataFrame to return
+  DataFrame results = DataFrame::create( Named("pvalue") = pvalues,
+                                         Named("sign") = sign);
+  
+  
+  return results;
+  
+}
+// [[Rcpp::export]]
+DataFrame sparse_fasterWilcox_old(Rcpp::S4 A,
+                                  NumericVector rowIndex, 
+                                  NumericVector col_id, 
+                                  NumericVector ref_col_id, 
+                                  bool verbose = 0, 
+                                  std::string alternative = "two.sided", 
+                                  bool paired = 0) {
+  
+  MySparseMatrix M =  MySparseMatrix(A);
+  NumericVector pvalues(M.nrow(), 1.0);
+  NumericVector sign(M.nrow());
+  sign.fill(NA_REAL); // NA_REAL is a constant representing NaN in Rcpp
+  
+  
+  std::vector<std::vector<double>>  tmp1s = M.extractCol(col_id);
+  std::vector<std::vector<double>> tmp2s = M.extractCol(ref_col_id);
+  
+  
+  
+  for (int rr = 0; rr < rowIndex.length(); rr++) {
+    
+    int ii = rowIndex[rr] -1 ;
+    // NumericVector row = M.extractRowCol(ii);
+    
+    // NumericVector tmp1 = row[col_id -1];
+    NumericVector tmp1 = Rcpp::wrap(tmp1s[ii]);
+    
+    // std::cout<<"\ntmp1: ";
+    // for(size_t pp=0; pp<tmp1.size(); pp++)
+    //     std::cout<<tmp1[pp]<<" ";
+    // std::cout<<endl;
+      
+    
+    int z = col_id.size() - tmp1.size();
+    for (int k=0; k < z;  ++k){
+      tmp1.push_back(0.0);
+    }
+    
+    double sum1 = std::accumulate(tmp1.begin(), tmp1.end(), 0.0);
+    double mean1 = sum1 / tmp1.size();
+    
+    NumericVector tmp2 = Rcpp::wrap(tmp2s[ii]);
+    
+    // std::cout<<"\ntmp2: ";
+    // for(size_t pp=0; pp<tmp2.size(); pp++)
+    //   std::cout<<tmp2[pp]<<" ";
+    // std::cout<<endl;
+    
+    z = ref_col_id.size() - tmp2.size();
+    for (int k=0; k < z;  ++k){
+      tmp2.push_back(0.0);
+    }
+    
+    // NumericVector tmp2 = row[ref_col_id -1];
+    double sum2 = std::accumulate(tmp2.begin(), tmp2.end(), 0.0);
+    double mean2 = sum2 / tmp2.size();
+    
+    if(mean2 <= mean1)
+    {
+      sign[ii] = 1;
+    }else{
+      sign[ii] = 0;
+    }
+    
+    
+    pvalues[ii] = fasterWilcox(tmp1, tmp2, verbose = 0, alternative = alternative, paired);
+  }
+  
+  // Creating DataFrame to return
+  DataFrame results = DataFrame::create( Named("pvalue") = pvalues,
+                                         Named("sign") = sign);
+  
+  
+  return results;
+  
+  
+}
+
+
+

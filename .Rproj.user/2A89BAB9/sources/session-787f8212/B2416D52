@@ -1,0 +1,26 @@
+{
+    "id": "B2416D52",
+    "path": "~/Desktop/fasterWilcox_presentation/Wilcoxon_statistics.cpp",
+    "project_path": "Wilcoxon_statistics.cpp",
+    "type": "cpp",
+    "hash": "2706929278",
+    "contents": "",
+    "dirty": false,
+    "created": 1709317558870.0,
+    "source_on_save": false,
+    "relative_order": 4,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "547,2",
+        "scrollLine": "531"
+    },
+    "folds": "18|16|20|0|\n24|58|35|0|\n42|88|69|0|\n84|1|182|0|\n191|2|285|0|\n295|131|344|0|\n348|194|387|0|\n393|148|441|0|\n453|58|481|0|\n484|176|522|0|\n",
+    "lastKnownWriteTime": 1709318262,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1709318262106,
+    "read_only": false,
+    "read_only_alternatives": []
+}

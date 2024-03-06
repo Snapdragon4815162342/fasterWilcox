@@ -1,0 +1,739 @@
+library('microbenchmark')
+library('bigmemory')
+library('gficf')
+library('peakRAM')
+library('ggplot2')
+library('svMisc')
+
+library('Rcpp')
+setwd("~/gficf_vs_homemade")
+sourceCpp("Rcpp_FastWilcox.cpp", verbose = TRUE, rebuild = TRUE)
+
+sourceCpp("Rcpp_FasterWilcox.cpp", verbose = TRUE, rebuild = TRUE)
+sourceCpp("Rcpp_FasterWilcox_ver2.cpp", verbose = TRUE, rebuild = TRUE)
+sourceCpp("Rcpp_FasterWilcox_ver3.cpp", verbose = TRUE, rebuild = TRUE)
+
+sourceCpp("Rcpp_fasterWilcox_parallel.cpp", verbose = TRUE, rebuild = TRUE)
+sourceCpp("fasterWilcox_parall_ver2.cpp", verbose = TRUE, rebuild = TRUE)
+sourceCpp("bigMediaRiga.cpp", verbose = T, rebuild = T)
+sourceCpp("fasterWilcox_parallel.cpp", verbose = T, rebuild = T)
+
+
+
+
+
+m1 <- matrix(data = rnorm(10^3, mean = 0, sd = 1), nrow = 5, ncol = 5)
+m2 <- matrix(data = rnorm(10^3, mean = 0, sd = 1), nrow = 5, ncol = 5)
+
+gficf:::rcpp_parallel_WMU_test(m1,m2,printOutput = T)
+fasterWilcox_parallel(m1,m2,verbose = T)
+fasterWilcox_parall_ver2(m1,m2,verbose = T)
+fasterWilcox(m1[1,], m2[1,])
+gficf:::rcpp_WMU_test(t(as.matrix(c(m1[1,],m2[1,]))),1:length(m1[1,]),(length(m1[1,])+1):length(t(as.matrix(c(m1[1,],m2[1,])))))
+
+m1 <-as.big.matrix(m1)
+m1
+r <- BigMediaRighe(m1@address)               
+
+
+microbenchmark(fasterWilcox(m1[1,], m2[1,]), 
+               gficf:::rcpp_parallel_WMU_test(m1,m2,printOutput = F), 
+               unit = "relative")
+
+
+
+
+
+
+# Test to see if the functions work
+v1<- c(45, 33, 35, 39, 42)
+v2<- c(34, 36, 41, 43, 44, 37)
+
+v1<- rnorm(n = 100)
+v2<- rnorm(n = 100)
+
+a <- wilcox.test(v1, v2, alternative = "two.sided", paired = F, exact = F, correct = T)
+b <- fasterWilcox(v1, v2, verbose = T)
+c <- fastWilcox(v1, v2, verbose = T)
+d <- gficf:::rcpp_WMU_test(t(as.matrix(c(v1,v2))),
+                           1:length(v1),
+                           (length(v1)+1):length(t(as.matrix(c(v1,v2)))))
+e <- fasterWilcox_v2(v1, v2, verbose = T)
+
+cat(c(" wilcox         ->",toString(a$p.value), "\n",     #0.9272
+      "fasterWilcox    ->", toString(b[1])     , "\n",    #0.9272
+      #"fastWilcox      ->", toString(c[1])     , "\n",    #0.9272
+      #"gficf           ->", toString(d[1])     , "\n",    #0.9272
+      "fasterWilcox_v2 ->", toString(e[1])     , "\n"))   #0.9272
+
+
+rm(v1, v2, a, b, c, d)
+
+wil_2  <- wilcox.test(v1, v2, alternative = "two.sided", paired = F, exact = F, correct = T)$p.value
+wil_grater  <- wilcox.test(v1, v2, alternative = "greater", paired = F, exact = F, correct = T)$p.value
+wil_less    <- wilcox.test(v1, v2, alternative = "less", paired = F, exact = F, correct = T)$p.value
+
+(wil_grater + wil_less)-1
+
+Fwil_2 <- fasterWilcox_v3(v1, v2, alternative = "two.sided")$p.value
+Fwil_grater <- fasterWilcox_v3(v1, v2, alternative = "greater")$p.value
+Fwil_less   <- fasterWilcox_v3(v1, v2, alternative = "less")$p.value
+
+Fwil_grater + Fwil_less
+
+cat(c(" diff_2_sided         ->",wil_2 - Fwil_2, "\n", 
+      " diff_grater          ->",wil_grater - Fwil_grater, "\n", 
+      " diff_less            ->",wil_less - Fwil_less, "\n"))
+
+
+
+#####################################################
+g<- rep(0,0)
+for (i in seq(10,10^5,length.out = 10)){
+v1<- rnorm(n = i)
+v2<- rnorm(n = i)
+wil_grater  <- wilcox.test(v1, v2, alternative = "greater", paired = F, exact = F, correct = T)$p.value
+wil_less    <- wilcox.test(v1, v2, alternative = "less", paired = F, exact = F, correct = T)$p.value
+
+g <- append(g, (wil_grater + wil_less)-1)
+}
+
+plot(g)
+lines(g)
+#####################################################
+
+
+
+sourceCpp("Rcpp_FasterWilcox_ver3.cpp", verbose = TRUE, rebuild = TRUE)
+
+
+v1<- c(45, 33, 35, 39, 42)
+v2<- c(34, 36, 41, 43, 44)
+
+v1<- c(125, 115, 130, 140, 140, 115, 140, 125, 140, 135)
+v2<- c(110, 122, 125, 120, 140, 124, 123, 137, 135, 145)
+
+v1 <- c(34, 33, 41, 39, 44, 37, 39)
+v2 <- c(45, 36, 35, 43, 42, 42, 46)
+
+v1 <- c(1,1,1,2,3,4,5,6)
+v2 <- c(1,1,1,5,6,7,8,9)
+
+v1<- rnorm(n = 10^5)
+v2<- rnorm(n = 10^5)
+
+wil_paired  <- wilcox.test(v1, v2, alternative = "two.sided", paired = T, exact = F, correct = T)$p.value
+Fwil_paired <- fasterWilcox_v3(v1, v2, alternative = "two.sided", paired = T, verbose = F)$p.value
+wil_paired - Fwil_paired
+
+
+mbm = microbenchmark(
+  wilcox.test_paired  = wilcox.test(v1, v2, alternative = "two.sided", paired = T, exact = F, correct = T),
+  fasterWilcox_paired = fasterWilcox_v3(v1, v2, alternative = "two.sided", paired = T, verbose = F)   ,
+  wilcox.test  = wilcox.test(v1, v2, alternative = "two.sided", paired = F, exact = F, correct = T),
+  fasterWilcox = fasterWilcox_v3(v1, v2, alternative = "two.sided", paired = F, verbose = F),
+  times=100 )
+
+autoplot(mbm)+
+  ggtitle("vector size 10^5")
+
+ggsave("10e5.png",
+       width = 15,
+       height = 10,
+       units = "cm",
+       dpi = 200)
+
+################################################################################################
+################################################################################################
+# SPARSE MATRIX
+sourceCpp("sparse_fasterWilcox.cpp", verbose = TRUE, rebuild = TRUE)
+sourceCpp("sparse_faster_wilcox_v3.cpp", verbose = TRUE, rebuild = TRUE)
+
+
+
+M <- matrix(c(1,4,7,1,3,
+              3,3,9,2,1,
+              0,2,1,8,5), nrow = 3, ncol = 5)
+M
+sM<- as(M, "sparseMatrix")
+sM
+
+sparse_fasterWilcox(sM, rowIndex = c(1,2), col_id = c(0,1), ref_col_id = c(2,3,4))
+
+res <- sparse_fasterWilcox_v3(sM, rowIndex = c(0,1,2), col_id = c(0,1), ref_col_id = c(2,3,4), alternative = "two.sided")
+
+r3<-wilcox.test(M[3,c(1,2)], M[3,c(3,4,5)], alternative = "two.sided", paired = F, exact = F, correct = T)$p.value
+################################################################################################
+################################################################################################
+
+
+set.seed(567)
+
+ndecadi = 5
+nRepetitions = 100
+
+# Sul mio computer(usando una virtual machine), questo ciclo for impiega circa  5 minuti
+
+
+results <- data.frame()
+#names(results) <- c("vector_size", "exec_time", "sd_time", "peak_ram", "function_name")
+
+
+for (i in 1:ndecadi){
+  ncol = 10^i;
+  # Inizializzo due vettori con valori random
+  #M <- big.matrix(nrow_max, ncol_max, type = 'double', init = 0)
+  
+  a <- rnorm(ncol, mean = 1, sd = 1)
+  b <- rnorm(ncol, mean = 1, sd = 1)
+  
+  # Eseguo fastWilcox, fasterWilcox(le funzioni scritta da me), rcpp_WMU_test(da gficf) e 
+  # rcpp_parallel_WMU_test(da gficf) tra i 2 vettori a e b salvando il tempo di esecuzione
+  
+
+
+  
+  #gficf
+  #m <- t(as.matrix(c(a,b)))
+  
+  # mb_res_gficf <- microbenchmark(gficf:::rcpp_WMU_test(t(as.matrix(c(a,b))),
+  #                                                      1:length(a),
+  #                                                      (length(a)+1):length(t(as.matrix(c(a,b))))),
+  #                                times = nRepetitions)
+  # pr_gficf <- peakRAM(gficf:::rcpp_WMU_test(t(as.matrix(c(a,b))),
+  #                                           1:length(a),
+  #                                           (length(a)+1):length(t(as.matrix(c(a,b))))))
+  # 
+  # 
+  # results <- rbind(results, data.frame(vector_size = 10^i,
+  #                                      exec_time = mean(mb_res_gficf[,2])/10^9,
+  #                                      sd_time = sd(mb_res_gficf[,2])/10^9,
+  #                                      peak_ram = pr_gficf[1,4],
+  #                                      function_name = "gficf"))
+
+  # gficf_parallel
+  parallel_factor <- 10
+  # visto che rcpp_parallel_WMU_test lavora in parallelo, le faccio calcolare parallel_factor(=100) coppie di vettori alla volta,
+  # divido poi il tempo di esecuzione per parallel_factor(=10)
+  
+  m1 <- matrix(data = rnorm(parallel_factor*ncol, mean = 0, sd = 1), nrow = parallel_factor, ncol = 10^i)
+  m2 <- matrix(data = rnorm(parallel_factor*ncol, mean = 0, sd = 1), nrow = parallel_factor, ncol = 10^i)
+  
+  mb_res_paral <- microbenchmark(gficf:::rcpp_parallel_WMU_test(m1,
+                                                                m2,
+                                                                printOutput = F), times = nRepetitions )
+  pr_res_paral <- peakRAM(gficf:::rcpp_parallel_WMU_test(m1,
+                                                         m2,
+                                                         printOutput = F))
+  
+  
+  
+  results <- rbind(results, data.frame(vector_size = 10^i,
+                                       exec_time = (mean(mb_res_paral[,2])/10^9)/100,
+                                       sd_time = (sd(mb_res_paral[,2])/10^9)/100,
+                                       peak_ram = pr_res_paral[1,4],
+                                       function_name = "gficf_parallel"))
+  
+  
+  
+  #fasterWilcox_parall_ver2
+  # visto che fasterWilcox_parall_ver2 lavora in parallelo, le faccio calcolare parallel_factor(=100) coppie di vettori alla volta,
+  # divido poi il tempo di esecuzione per parallel_factor(=10)
+  
+  # mb_res_fasterWil_paral_v2 <- microbenchmark(fasterWilcox_parall_ver2(m1,
+  #                                                                m2), times = nRepetitions )
+  # pr_res_fasterWil_paral_v2 <- peakRAM(fasterWilcox_parall_ver2(m1,
+  #                                                         m2))
+  # 
+  # 
+  # 
+  # results <- rbind(results, data.frame(vector_size = 10^i,
+  #                                      exec_time = (mean(mb_res_fasterWil_paral_v2[,2])/10^9)/100,
+  #                                      sd_time = (sd(mb_res_fasterWil_paral_v2[,2])/10^9)/100,
+  #                                      peak_ram = pr_res_fasterWil_paral_v2[1,4],
+  #                                      function_name = "fasterWilcox_parall_ver2"))
+  # 
+  
+  
+  
+  
+  #fasterWilcox_parallel
+  # visto che fasterWilcox_parallel lavora in parallelo, le faccio calcolare parallel_factor(=100) coppie di vettori alla volta,
+  # divido poi il tempo di esecuzione per parallel_factor(=10)
+  
+  mb_res_fasterWil_paral <- microbenchmark(fasterWilcox_parallel(m1,
+                                                                 m2,
+                                                                 verbose = F), times = nRepetitions )
+  pr_res_fasterWil_paral <- peakRAM(fasterWilcox_parallel(m1,
+                                                          m2, 
+                                                          verbose = F))
+  
+  
+  
+  results <- rbind(results, data.frame(vector_size = 10^i,
+                                       exec_time = (mean(mb_res_fasterWil_paral[,2])/10^9)/100,
+                                       sd_time = (sd(mb_res_fasterWil_paral[,2])/10^9)/100,
+                                       peak_ram = pr_res_fasterWil_paral[1,4],
+                                       function_name = "fasterWilcox_parallel"))
+  
+  
+  
+  #fastWilcox
+
+  
+  
+  #fasterWilcox
+  mb_res_fasterWilcox <- microbenchmark(fasterWilcox(a, b), times = nRepetitions)
+  pr_fasterWilcox <- peakRAM(fasterWilcox(a, b))
+  
+  
+  results <- rbind(results, data.frame(vector_size = 10^i,
+                                       exec_time = mean(mb_res_fasterWilcox[,2])/10^9,
+                                       sd_time = sd(mb_res_fasterWilcox[,2])/10^9,
+                                       peak_ram = pr_fasterWilcox[1,4],
+                                       function_name = "fasterWilcox"))
+  
+  #normal wilcox
+  
+  # mb_res_wilcox <- microbenchmark(wilcox.test(a,b, alternative = "two.sided", paired = F, exact = F, correct = T),
+  #                                 times = nRepetitions)
+  # pr_wilcox <- peakRAM(gficf:::rcpp_WMU_test(t(as.matrix(c(a,b))),
+  #                                            1:length(a),
+  #                                            (length(a)+1):length(t(as.matrix(c(a,b))))))
+  # 
+  # 
+  # results <- rbind(results, data.frame(vector_size = 10^i,
+  #                                      exec_time = mean(mb_res_wilcox[,2])/10^9,
+  #                                      sd_time = sd(mb_res_wilcox[,2])/10^9,
+  #                                      peak_ram = pr_wilcox[1,4],
+  #                                      function_name = "wilcox"))
+  
+  
+  
+  cat(c("vector size 10^", toString(i), " done...\n"))  
+  
+}
+
+# Rimuovo a, b, m1 e m2 perchè occupano troppa memoria
+rm(a, b, m1, m2)
+
+
+
+
+
+
+
+
+
+
+# Mostro i risultati
+results$function_name <- as.factor(results$function_name)
+#results
+#str(results)
+
+# Ordino e salvo il dataframe
+results <- invisible(
+  with(results, results[order(function_name, vector_size),])
+  )
+head(results)
+write.csv(results, "timing_results.csv", row.names=FALSE)
+
+
+
+
+# migioramento percentuale di prestazioni
+
+results$improvement = 0
+for (i in 1:length(levels(results$function_name)) ){
+  results$improvement[results$function_name == levels(results$function_name)[i]] <- 100*(-1 +(results$exec_time[results$function_name == "wilcox"] / 
+                                                                                            results$exec_time[results$function_name == levels(results$function_name)[i]]
+                                                                                            )
+                                                                                         )
+
+}
+
+
+
+# grafico miglioramento % tutte le fun rispetto a wilcox.test
+png(file="time saved with respect to wilcox.png",
+    width=512, height=512)
+
+ggplot(data = results[results$function_name != "wilcox" & results$function_name != "fastWilcox" 
+                      #& results$function_name != "gficf_parallel"
+                      ,],
+       aes(x = vector_size, y = improvement, color = function_name))+
+  scale_x_log10() +
+  #scale_y_log10() +
+  geom_point(size = 5, alpha = 0.3)+
+  geom_line(linewidth = 1)+
+  theme_minimal()+
+  labs(title = "time improvement% with respect to wilcox",
+       x = "n. of elements for each pair of vectors",
+       y = "%"
+  )
+
+dev.off()
+# grafico miglioramento % fasterWilcox rispetto a gficf
+pp <- 100*(-1 +(results$exec_time[results$function_name == "gficf"] / 
+                  results$exec_time[results$function_name == "fasterWilcox"]
+)
+)
+
+
+png(file="time saved with respect to wilcox.png",
+    width=512, height=512)
+plot(pp,
+     main = "time improvement% of fasterWilcox vs gficf",
+     xlab = "log10[vector_size]",
+     ylab = "% improvement",
+     ylim = c(50, 250))
+lines(pp)
+abline(h=min(pp), col="blue")
+dev.off()
+
+
+
+
+# Grafico tempi con tutte e 5 le funzioni
+
+
+png(file="execution_times_1e5.png",
+    width=512, height=512)
+
+ggplot(data = results,
+       aes(x = vector_size, y = exec_time, color = function_name))+
+  scale_x_log10() +
+  scale_y_log10() +
+  geom_point(size = 5, alpha = 0.3)+
+  geom_line(linewidth = 1)+
+  theme_minimal()+
+  labs(title = "Execution times",
+       subtitle = toString(c("each datapoint is the mean of ", toString(nRepetitions), " time measurements")),
+       x = "n. of elements for each pair of vectors",
+       y = "execution time [s]"
+       )+
+  geom_errorbar(aes(ymin=exec_time-sd_time, ymax=exec_time+sd_time), width=.2,
+                position=position_dodge(0.05))
+dev.off()
+
+# Grafico con tutte e 5 le funzioni fino a 10^4
+png(file="execution_times_1e4.png",
+    width=512, height=512)
+
+ggplot(data = results[results$vector_size != 100000,],
+       aes(x = vector_size, y = exec_time, color = function_name))+
+  scale_x_log10() +
+  geom_point(size = 5, alpha = 0.3)+
+  geom_line(linewidth = 1)+
+  theme_minimal()+
+  labs(title = "Execution times",
+       subtitle = toString(c("each datapoint is the mean of ", toString(nRepetitions), " time measurements")),
+       x = "n. of elements for each pair of vectors",
+       y = "execution time [s]"
+  )+
+  geom_errorbar(aes(ymin=exec_time-sd_time, ymax=exec_time+sd_time), width=.2,
+                position=position_dodge(0.05))
+dev.off()
+
+# Grafico con 3 funzioni
+png(file="execution_times_without_fastWilcox_1e5.png",
+    width=512, height=512)
+
+#ggplot(data = results[results$function_name != "fastWilcox" & results$function_name != "wilcox",],
+ggplot(data = results[results$function_name != "fasterWilcox",], 
+      aes(x = vector_size, y = exec_time, color = function_name))+
+  scale_x_log10() +
+  scale_y_log10() +
+  geom_point(size = 5, alpha = 0.3)+
+  geom_line(linewidth = 1)+
+  theme_minimal()+
+  labs(title = "Execution times (without fastWilcox)",
+       subtitle = toString(c("each datapoint is the mean of ", toString(nRepetitions), " time measurements\n regular wilcox.test() is 2 order of magnitude out of scale")),
+       x = "n. of elements for each pair of vectors",
+       y = "execution time [s]"
+  )+
+  geom_errorbar(aes(ymin=exec_time-sd_time, ymax=exec_time+sd_time), width=.2,
+                position=position_dodge(0.05))
+dev.off()
+
+# Grafico con 3 funzioni fino a 10^4
+png(file="execution_times_without_fastWilcox_1e4.png",
+    width=512, height=512)
+
+ggplot(data = results[(results$function_name != "fastWilcox" & results$function_name != "wilcox") & (results$vector_size != 100000),],
+       aes(x = vector_size, y = exec_time, color = function_name))+
+  scale_x_log10() +
+  geom_point(size = 5, alpha = 0.3)+
+  geom_line(linewidth = 1)+
+  theme_minimal()+
+  labs(title = "Execution times (without fastWilcox)",
+       subtitle = toString(c("each datapoint is the mean of ", toString(nRepetitions), " time measurements\n regular wilcox.test() is 2 order of magnitude out of scale")),
+       x = "n. of elements for each pair of vectors",
+       y = "execution time [s]"
+  )+
+  geom_errorbar(aes(ymin=exec_time-sd_time, ymax=exec_time+sd_time), width=.2,
+                position=position_dodge(0.05))
+dev.off()
+
+
+
+
+
+
+
+
+
+
+# testo la velocità di gficf_parallel  rispetto alla grandezza delle matrici in input
+
+total_steps = seq(2,100,2)
+
+exec_time = rep(0, length(total_steps))
+sd_time = rep(0, length(total_steps))
+counter=0
+
+# Questo for impiega circa 10 minuti (su virtual machine)
+for (parallel_factor in total_steps){
+  
+  
+  m1 <- matrix(data = rnorm(10^5, mean = 0, sd = 1), nrow = parallel_factor, ncol = 10^4)
+  m2 <- matrix(data = rnorm(10^5, mean = 0, sd = 1), nrow = parallel_factor, ncol = 10^4)
+  
+  temp <- microbenchmark(gficf:::rcpp_parallel_WMU_test(m1,
+                                                        m2,
+                                                        printOutput = F), times = 10)
+  exec_time[counter] = (mean(temp[,2])/10^9)/(parallel_factor)
+  sd_time[counter] = (sd(temp[,2])/10^9)/(parallel_factor)
+  counter = counter+1
+  progress((counter/length(total_steps))*100)
+}
+
+x <- total_steps[-length(total_steps)]
+y <- exec_time[-length(exec_time)]
+sd <- sd_time[-length(sd_time)]
+# rimuovo l'ultimo valore perchè, qualunque lunghezza di total_steps io scelga, è sempre un outlier.
+# non ho capito il perchè
+
+png(file="velocita_gficf_paral_rispetto_al_n_vettori_in_input_VECTLEN_1E4.png",
+    width=512, height=512)
+
+plot (x, y,
+      ylim = c(0.0005,0.0015),
+      main = paste('Exec time gficf_paral over n of vectors done in paral, vectLen = 10^4'),
+      xlab = 'n. of tests done in parallel',
+      ylab = 'execution time (of a single MWU test)[s]')  # vectLen = (10^k)/2)
+segments(x,y-sd,x,y+sd)
+epsilon <- 0.4
+segments(x-epsilon,y-sd,x+epsilon,y-sd)
+segments(x-epsilon,y+sd,x+epsilon,y+sd)
+lines(x, y, lwd = 2, col = 'red')
+
+
+
+dev.off()
+
+# Costruendo lo stesso grafico ma con coppie di vettori di 10^5 elementi
+# la curva non cambia
+
+
+
+#########################################################################################################################################
+#########################################################################################################################################
+
+
+# Controllo quale tra funzioni fastWilcox, fasterWilcox e gficf dà risultati piu simili a wilcox.test()
+
+nDifferentVectorLengths <- 4
+
+numRow = 100
+
+errors <- data.frame()
+
+
+
+pValuesWilcox <- matrix(0, nrow = numRow, ncol = nDifferentVectorLengths)
+pValuesGficf <- matrix(0, nrow = numRow, ncol = nDifferentVectorLengths)
+pValuesfasterWilcox <- matrix(0, nrow = numRow, ncol = nDifferentVectorLengths)
+pValuesfastWilcox   <- matrix(0, nrow = numRow, ncol = nDifferentVectorLengths)
+
+
+
+for (k in 1:nDifferentVectorLengths){
+  numCol = 10^k
+  #print("populating randomMat")
+  randomMat <- matrix(runif(numRow*numCol), nrow = numRow, ncol = numCol)  
+  # Anche usando rnorm e rbinom, i risultati sono molto simili (stessa forma dei grafici e stessi ordini di grandezza)
+  #print("done populating")
+  for(i in 1:numRow){
+    cat('\n')
+    #progress(i, progress.bar = T)
+    progress(i)
+    cat('\n')
+      temp <- wilcox.test(randomMat[i,1:floor(numCol/2)], randomMat[i,(floor(numCol/2)+1):numCol], alternative = "two.sided", paired = F, exact = F, correct = T)
+    pValuesWilcox[i,k] <- temp$p.value
+    
+    
+    temp <- gficf:::rcpp_WMU_test(t(as.matrix(randomMat[i,])),1:floor(numCol/2),(floor(numCol/2)+1):numCol)
+    pValuesGficf[i,k] <- temp[1]
+    
+    
+    temp <- fastWilcox(randomMat[i,1:floor(numCol/2)], randomMat[i,(floor(numCol/2)+1):numCol])
+    pValuesfastWilcox[i,k] <- temp[1]
+    
+    temp <- fasterWilcox(randomMat[i,1:floor(numCol/2)], randomMat[i,(floor(numCol/2)+1):numCol])
+    pValuesfasterWilcox[i,k] <- temp[1]
+  }
+  cat(c("\nvector size 10^", toString(k), " done... repeated ", toString(numRow), "times\n"))  
+  
+  errors <- rbind(errors, data.frame(vector_size = 10^k,
+                                 rmse = sqrt(mean((pValuesWilcox[,k] - pValuesfastWilcox[,k])/numRow)^2),
+                                 mape = mean((pValuesWilcox[,k] - pValuesfastWilcox[,k])/pValuesWilcox[,k]),
+                                 function_name = "fastWilcox"))
+  errors <- rbind(errors, data.frame(vector_size = 10^k,
+                                 rmse = sqrt(mean((pValuesWilcox[,k] - pValuesfasterWilcox[,k])/numRow)^2),
+                                 mape = mean((pValuesWilcox[,k] - pValuesfasterWilcox[,k])/pValuesWilcox[,k]),
+                                 function_name = "fasterWilcox"))
+  errors <- rbind(errors, data.frame(vector_size = 10^k,
+                                 rmse = sqrt(mean((pValuesWilcox[,k] - pValuesGficf[,k])/numRow)^2),
+                                 mape = mean((pValuesWilcox[,k] - pValuesGficf[,k])/pValuesWilcox[,k]),
+                                 function_name = "gficf"))
+
+
+}
+
+errors$function_name <- as.factor(errors$function_name)
+
+png(file="rmse.png",
+    width=512, height=512)
+
+ggplot(data = errors,
+       aes(x=vector_size, y=rmse, color = function_name))+
+  scale_x_log10() +
+  geom_point(size = 5, alpha = 0.3)+
+  geom_line(linewidth = 1)+
+  theme_minimal()+
+  labs(title = "Root Mean Square Error",
+       subtitle = toString(c(toString(numRow), "samples per function per point")),
+       x = "n. of elements for each pair of vectors",
+       y = "rmse"
+  )
+dev.off()
+
+
+
+
+png(file="mape.png",
+    width=512, height=512)
+
+ggplot(data = errors,
+       aes(x=vector_size, y=mape, color = function_name))+
+  scale_x_log10() +
+  geom_point(size = 5, alpha = 0.3)+
+  geom_line(linewidth = 1)+
+  theme_minimal()+
+  labs(title = "Mean absolute percentage error",
+       subtitle = toString(c(toString(numRow), "samples per function per point")),
+       x = "n. of elements for each pair of vectors",
+       y = "mape"
+  )
+dev.off()
+
+
+
+
+
+# Error over p value
+
+
+png(file="errore_su_pValue_fasterWilcox_1e4.png",
+    width=512, height=512)
+
+plot(pValuesWilcox[,4],
+     pValuesWilcox[,4]-pValuesfasterWilcox[,4],
+     #ylim = c(-0.01, 0.01),
+     main = paste('Differenza tra Pwilcox e PfasterWilcox al variare del pValue, vectLen = 10^4'),
+     xlab = 'Pvalue',
+     ylab = 'Pwilcox - PfasterWilcox')  # vectLen = (10^k)/2
+dev.off()
+
+png(file="errore_su_pValue_fastWilcox_1e4.png",
+    width=512, height=512)
+
+plot(pValuesWilcox[,4],
+     pValuesWilcox[,4]-pValuesfastWilcox[,4],
+     #ylim = c(-0.01, 0.01),
+     main = paste('Differenza tra Pwilcox e PfastWilcox al variare del pValue, vectLen = 10^4'),
+     xlab = 'Pvalue',
+     ylab = 'Pwilcox - PfastWilcox')  # vectLen = (10^k)/2
+dev.off()
+
+png(file="errore_su_pValue_gficf_1e4.png",
+    width=512, height=512)
+plot(pValuesWilcox[,4],
+     pValuesWilcox[,4]-pValuesGficf[,4],
+     #ylim = c(-0.01, 0.01),
+     main = paste('Differenza tra Pwilcox e Pgficf al variare del pValue, vectLen = 10^4'),
+     xlab = 'Pvalue',
+     ylab = 'Pwilcox - Pgficf')  # vectLen = (10^k)/2
+dev.off()
+
+
+
+
+# tutti gli algoritmi insieme
+v <- 4
+plot(pValuesWilcox[,v],
+     pValuesWilcox[,v]-pValuesfasterWilcox[,v])
+points(pValuesWilcox[,v]-pValuesfastWilcox[,v], col = 'red')
+points(pValuesWilcox[,v]-pValuesGficf[,v], col = 'blue')
+
+
+# Trying to use a big.matrix
+set.seed(456)
+bm <- matrix(rnorm(100), nrow = 10, ncol = 10)
+
+bm <- as.big.matrix(bm)
+wilcox.test(bm[3,1:5], bm[3,6:10], alternative = "two.sided", paired = F, exact = F, correct = T)  #0.403 (con seed = 456)
+fastWilcox(bm[3,1:5], bm[3,6:10])      #sbagliato -> 0.464
+fasterWilcox(bm[3,1:5], bm[3,6:10])    #funziona 0.403
+gficf:::rcpp_WMU_test(bm[3,],1:5,6:10) #error not a matrix
+# trasformo bm[3,] in una matrice r
+gficf:::rcpp_WMU_test(t(as.matrix(bm[3,])),1:5,6:10) # sbagliato -> 0.464
+
+
+
+bm1 <- matrix(rnorm(100), nrow = 10, ncol = 10)
+bm2 <- matrix(rnorm(100), nrow = 10, ncol = 10)
+
+bm1 <- as.big.matrix(bm1)
+bm2 <- as.big.matrix(bm2)
+
+
+
+
+
+gficf:::rcpp_parallel_WMU_test(bm1,bm2,printOutput = T)
+fasterWilcox_parallel(bm1,bm2,verbose = F)
+fasterWilcox_parall_ver2(bm1,bm2,verbose = F)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
